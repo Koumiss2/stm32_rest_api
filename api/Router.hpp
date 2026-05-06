@@ -1,20 +1,30 @@
 #pragma once
 #include "HttpTypes.hpp"
 #include <cstdint>
+#include <cstddef>
+
+struct netconn;
 
 class IController;
 
 class Router {
 public:
     static Router& instance();
-
-    void register_controller(const char* prefix, IController* ctrl);
-    void handle(uint8_t* raw_request, uint16_t len);
+    void add_route(const char* prefix, IController* ctrl);
+    void handle(uint8_t* raw, uint16_t len, struct netconn* conn);
 
 private:
-    Router() = default;
+    Router() : routes_{}, route_count_(0) {}
 
-    static uint8_t method_from_str(const char* m, uint8_t len);
-    static HttpMethod detect_method(const char* buf, uint16_t len);
-    static const char* skip_uri_path(const char* p);
+    HttpMethod detect_method(const char* buf);
+    bool match_prefix(const char* uri, size_t uri_len, const char* prefix);
+    void send_response(struct netconn* conn, const Response& res);
+
+    struct Route {
+        const char*   prefix;
+        IController*  ctrl;
+    };
+
+    Route routes_[8];
+    uint8_t route_count_;
 };

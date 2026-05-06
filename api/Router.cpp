@@ -1,6 +1,8 @@
 #include "Router.hpp"
 #include "../endpoints/IController.hpp"
+#include "lwip/api.h"
 #include <cstring>
+#include <cstdio>
 
 // ---------- singleton ----------
 Router& Router::instance() {
@@ -8,61 +10,104 @@ Router& Router::instance() {
     return inst;
 }
 
-// ---------- helpers ----------
-static bool str_eq(const char* a, const char* b, size_t len) {
-    return len == strlen(b) && strncmp(a, b, len) == 0;
+void Router::add_route(const char* prefix, IController* ctrl) {
+    if (route_count_ < 8) {
+        routes_[route_count_].prefix = prefix;
+        routes_[route_count_].ctrl   = ctrl;
+        route_count_++;
+    }
 }
 
-static bool match_path(const char* uri, size_t uri_len,
-                       const char* prefix, size_t prefix_len,
-                       const char** remainder) {
-    if (uri_len < prefix_len) return false;
-    if (strncmp(uri, prefix, prefix_len) != 0) return false;
-    *remainder = uri + prefix_len;
-    return true;
+// ---------- http parsing ----------
+HttpMethod Router::detect_method(const char* buf) {
+    if (strncmp(buf, "GET ",    4) == 0) return HttpMethod::GET;
+    if (strncmp(buf, "POST ",   5) == 0) return HttpMethod::POST;
+    if (strncmp(buf, "PUT ",    4) == 0) return HttpMethod::PUT;
+    if (strncmp(buf, "DELETE ", 7) == 0) return HttpMethod::DELETE;
+    return HttpMethod::UNKNOWN;
+}
+
+bool Router::match_prefix(const char* uri, size_t uri_len, const char* prefix) {
+    size_t plen = strlen(prefix);
+    return uri_len >= plen && strncmp(uri, prefix, plen) == 0;
+}
+
+// ---------- response ----------
+static const char* status_phrase(HttpStatus s) {
+    switch (s) {
+        case HttpStatus::OK:          return "OK";
+        case HttpStatus::CREATED:     return "Created";
+        case HttpStatus::BAD_REQUEST: return "Bad Request";
+        case HttpStatus::NOT_FOUND:   return "Not Found";
+        case HttpStatus::INTERNAL:    return "Internal Server Error";
+        default:                      return "Unknown";
+    }
+}
+
+void Router::send_response(struct netconn* conn, const Response& r) {
+    const char* phrase = status_phrase(r.status);
+    char hdr[128];
+    int n = snprintf(hdr, sizeof(hdr),
+        "HTTP/1.1 %d %s\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: %u\r\n"
+        "Connection: close\r\n"
+        "\r\n",
+        (int)r.status, phrase, (unsigned int)r.body.size());
+
+    netconn_write(conn, hdr, (size_t)n, NETCONN_COPY);
+    if (!r.body.empty()) {
+        netconn_write(conn, r.body.data(), r.body.size(), NETCONN_COPY);
+    }
 }
 
 // ---------- routing ----------
-void Router::handle(uint8_t* raw, uint16_t len)
+void Router::handle(uint8_t* raw, uint16_t len, struct netconn* conn)
 {
     if (len == 0) return;
 
-    // 1) parse method
-    HttpMethod m = detect_method(reinterpret_cast<char*>(raw), len);
-    if (m == HttpMethod::UNKNOWN) return;
+    const char* buf = reinterpret_cast<const char*>(raw);
 
-    // 2) skip "METHOD "
-    const char* p = reinterpret_cast<char*>(raw);
-    while (*p && *p != ' ') p++;          // skip method
-    while (*p == ' ') p++;                // skip space
+    HttpMethod m = detect_method(buf);
+    if (m == HttpMethod::UNKNOWN) {
+        Response r{HttpStatus::BAD_REQUEST, "{\"error\":\"bad request\"}"};
+        send_response(conn, r);
+        return;
+    }
 
-    // 3) URI starts here — find end of URI token
+    // Skip "METHOD "
+    const char* p = buf;
+    while (*p && *p != ' ') p++;
+    while (*p == ' ') p++;
+
+    // Extract URI token
     const char* uri_end = p;
     while (*uri_end && *uri_end != ' ' && *uri_end != '\r') uri_end++;
-    size_t uri_len = uri_end - p;
+    size_t uri_len = (size_t)(uri_end - p);
 
-    // 4) extract body (after \r\n\r\n)
+    // Extract body (after \r\n\r\n)
     std::string_view body;
     const char* body_start = strstr(p, "\r\n\r\n");
     if (body_start) {
         body_start += 4;
-        body = std::string_view(body_start, len - (body_start - reinterpret_cast<char*>(raw)));
+        size_t off = (size_t)(body_start - buf);
+        body = std::string_view(body_start,
+            (len > off) ? (size_t)(len - (unsigned)off) : 0);
     }
 
     Request req{m, std::string_view(p, uri_len), body};
-    Response res;
+    (void)req;
+    Response res{HttpStatus::NOT_FOUND, "{\"error\":\"not found\"}"};
 
-    // 5) dispatch to controllers
-    if (false) {}
-#include "router_dispatch.inc"
-}
+    // Try each registered route
+    for (uint8_t i = 0; i < route_count_; i++) {
+        if (match_prefix(p, uri_len, routes_[i].prefix)) {
+            const char* subpath = p + strlen(routes_[i].prefix);
+            Request sub_req{m, std::string_view(subpath), body};
+            routes_[i].ctrl->handle(sub_req, res);
+            break;
+        }
+    }
 
-HttpMethod Router::detect_method(const char* buf, uint16_t len)
-{
-    (void)len;
-    if (strncmp(buf, "GET ",   4) == 0) return HttpMethod::GET;
-    if (strncmp(buf, "POST ", 5) == 0) return HttpMethod::POST;
-    if (strncmp(buf, "PUT ",   4) == 0) return HttpMethod::PUT;
-    if (strncmp(buf, "DELETE ", 7) == 0) return HttpMethod::DELETE;
-    return HttpMethod::UNKNOWN;
+    send_response(conn, res);
 }

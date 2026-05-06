@@ -12,12 +12,12 @@ enum class HttpStatus {
 };
 
 struct Request {
-    HttpMethod   method;
+    HttpMethod        method;
     std::string_view uri;
     std::string_view body;
 };
 
 struct Response {
-    HttpStatus status = HttpStatus::OK;
+    HttpStatus        status = HttpStatus::OK;
     std::string_view body;
 };
