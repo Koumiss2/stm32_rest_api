@@ -1,7 +1,11 @@
 #include "http_server.hpp"
+#include "router.hpp"
+#include "StatusController.hpp"
 #include <cstring>
 #include <cstdio>
 #include <string>
+
+static StatusController status_controller;
 
 HttpServer::HttpServer(uint16_t port) : _port(port), _listen_fd(-1) {}
 
@@ -64,14 +68,8 @@ void HttpServer::handle_client(int client_fd) {
         Request req = parse_request(buffer, n);
         Response res;
 
-        // В будущем здесь будет вызов Router::instance().dispatch(req, res)
-        if (req.uri == "/status") {
-            res.status = HttpStatus::OK;
-            res.body = "{\"status\":\"up\"}";
-        } else {
-            res.status = HttpStatus::NOT_FOUND;
-            res.body = "{\"error\":\"not found\"}";
-        }
+        // Используем глобальный роутер для обработки запроса
+        Router::instance().dispatch(req, res);
 
         send_response(client_fd, res);
     }
@@ -115,6 +113,10 @@ void HttpServer::send_response(int client_fd, const Response& res) {
 // Реализация задачи FreeRTOS
 void http_server_task(void *argument) {
     (void)argument;
+    
+    // Регистрируем контроллеры
+    Router::instance().register_controller(&status_controller);
+    
     HttpServer server(80);
     server.run();
 }
