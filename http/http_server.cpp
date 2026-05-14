@@ -78,11 +78,21 @@ void HttpServer::handle_client(int client_fd) {
 Request HttpServer::parse_request(char* buffer, size_t size) {
     Request req;
     req.method = HttpMethod::UNKNOWN;
+    
+    std::string_view full_data(buffer, size);
+    
+    // Находим начало тела (после \r\n\r\n)
+    size_t header_end = full_data.find("\r\n\r\n");
+    if (header_end != std::string_view::npos) {
+        req.body = full_data.substr(header_end + 4);
+    }
 
     char* method_str = strtok(buffer, " ");
     if (method_str) {
         if (strcmp(method_str, "GET") == 0) req.method = HttpMethod::GET;
         else if (strcmp(method_str, "POST") == 0) req.method = HttpMethod::POST;
+        else if (strcmp(method_str, "PUT") == 0) req.method = HttpMethod::PUT;
+        else if (strcmp(method_str, "DELETE") == 0) req.method = HttpMethod::DELETE;
     }
 
     char* uri_str = strtok(nullptr, " ");
@@ -114,8 +124,8 @@ void HttpServer::send_response(int client_fd, const Response& res) {
 void http_server_task(void *argument) {
     (void)argument;
     
-    // Регистрируем контроллеры
-    Router::instance().register_controller(&status_controller);
+    // Регистрируем контроллеры с указанием пути
+    Router::instance().register_controller("/status", &status_controller);
     
     HttpServer server(80);
     server.run();

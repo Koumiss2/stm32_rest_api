@@ -4,8 +4,9 @@
 class IController {
 public:
     virtual ~IController() = default;
-    virtual void handle(const Request& req, Response& res) = 0;
-
-    virtual const char* get_path() const = 0;
-    virtual HttpMethod get_method() const = 0;
+    
+    virtual void get(const Request& req, Response& res) { res.status = HttpStatus::METHOD_NOT_ALLOWED; }
+    virtual void post(const Request& req, Response& res) { res.status = HttpStatus::METHOD_NOT_ALLOWED; }
+    virtual void put(const Request& req, Response& res) { res.status = HttpStatus::METHOD_NOT_ALLOWED; }
+    virtual void del(const Request& req, Response& res) { res.status = HttpStatus::METHOD_NOT_ALLOWED; }
 };

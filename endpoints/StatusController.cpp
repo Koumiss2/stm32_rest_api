@@ -2,20 +2,34 @@
 #include "jsmn.h"
 #include <cstring>
 
-void StatusController::handle(const Request& req, Response& res) {
-    // Example of using jsmn to parse request body if it's not empty
-    if (!req.body.empty()) {
-        jsmn_parser p;
-        jsmntok_t tokens[8];
-        jsmn_init(&p);
-        
-        int r = jsmn_parse(&p, req.body.data(), req.body.size(), tokens, 8);
-        
-        // In a real scenario, we would check r and tokens to extract data
-        (void)r; 
+void StatusController::get(const Request& req, Response& res) {
+    (void)req;
+    res.status = HttpStatus::OK;
+    res.body = "{\"status\":\"ok\",\"info\":\"GET request received\"}";
+}
+
+void StatusController::post(const Request& req, Response& res) {
+    if (req.body.empty()) {
+        res.status = HttpStatus::BAD_REQUEST;
+        res.body = "{\"error\":\"body is empty\"}";
+        return;
     }
 
-    // Static response for now
+    jsmn_parser p;
+    jsmntok_t tokens[16]; 
+    jsmn_init(&p);
+    
+    // Парсим
+    int r = jsmn_parse(&p, req.body.data(), req.body.size(), tokens, 16);
+    
+    // Если r < 0 — ошибка парсинга
+    // Если tokens[0].type != JSMN_OBJECT — мы ожидаем JSON объект {}
+    if (r < 0 || tokens[0].type != JSMN_OBJECT) {
+        res.status = HttpStatus::BAD_REQUEST;
+        res.body = "{\"error\":\"invalid json structure\"}";
+        return;
+    }
+
     res.status = HttpStatus::OK;
-    res.body = "{\"status\":\"ok\",\"free_heap\":65536,\"uptime\":1000}";
+    res.body = "{\"status\":\"ok\",\"info\":\"POST request processed\"}";
 }

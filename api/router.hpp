@@ -27,7 +27,7 @@ public:
     void put(std::string_view uri, HandlerFunc handler);
     void del(std::string_view uri, HandlerFunc handler);
     
-    void register_controller(IController* controller);
+    void register_controller(std::string_view path, IController* controller);
 
     void dispatch(const Request& req, Response& res) const;
 

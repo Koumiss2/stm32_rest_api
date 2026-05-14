@@ -3,7 +3,6 @@
 
 class StatusController : public IController {
 public:
-    void handle(const Request& req, Response& res) override;
-    const char* get_path() const override { return "/status"; }
-    HttpMethod get_method() const override { return HttpMethod::GET; }
+    void get(const Request& req, Response& res) override;
+    void post(const Request& req, Response& res) override;
 };

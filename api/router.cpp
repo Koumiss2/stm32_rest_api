@@ -21,15 +21,13 @@ void Router::del(std::string_view uri, HandlerFunc handler) {
     _routes.push_back({HttpMethod::DELETE, uri, handler});
 }
 
-void Router::register_controller(IController* controller) {
+void Router::register_controller(std::string_view path, IController* controller) {
     if (!controller) return;
-    _routes.push_back({
-        controller->get_method(),
-        controller->get_path(),
-        [controller](const Request& req, Response& res) {
-            controller->handle(req, res);
-        }
-    });
+    
+    get(path,  [controller](const Request& req, Response& res) { controller->get(req, res);  });
+    post(path, [controller](const Request& req, Response& res) { controller->post(req, res); });
+    put(path,  [controller](const Request& req, Response& res) { controller->put(req, res);  });
+    del(path,  [controller](const Request& req, Response& res) { controller->del(req, res);  });
 }
 
 void Router::dispatch(const Request& req, Response& res) const {
