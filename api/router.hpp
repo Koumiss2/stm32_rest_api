@@ -1,5 +1,5 @@
 #pragma once
-#include "HttpTypes.hpp"
+#include "http_types.hpp"
 #include <cstdint>
 
 class IController;
