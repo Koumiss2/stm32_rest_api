@@ -1,6 +1,7 @@
 #pragma once
 
 #include "http_types.hpp"
+#include "IController.hpp"
 #include <cstdint>
 #include <vector>
 #include <string_view>
@@ -25,6 +26,8 @@ public:
     void post(std::string_view uri, HandlerFunc handler);
     void put(std::string_view uri, HandlerFunc handler);
     void del(std::string_view uri, HandlerFunc handler);
+    
+    void register_controller(IController* controller);
 
     void dispatch(const Request& req, Response& res) const;
 
