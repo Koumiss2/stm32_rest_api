@@ -1,4 +1,4 @@
-#include "../api/HttpTypes.hpp"
+#include "HttpTypes.hpp"
 
 class IController {
 public:
