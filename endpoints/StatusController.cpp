@@ -1,5 +1,6 @@
 #include "StatusController.hpp"
-#include "jsmn.h"
+#define JSMN_STATIC
+#include "../jsmn/jsmn.h"
 #include <cstring>
 
 void StatusController::get(const Request& req, Response& res) {

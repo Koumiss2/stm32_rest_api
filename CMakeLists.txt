@@ -10,6 +10,7 @@ file (GLOB_RECURSE REST_SOURCES
 target_sources(rest_api PRIVATE ${REST_SOURCES})
 
 target_include_directories(rest_api PUBLIC 
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/api
     ${CMAKE_CURRENT_SOURCE_DIR}/http
     ${CMAKE_CURRENT_SOURCE_DIR}/endpoints

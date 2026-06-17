@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <vector>
 #include <string>
-#include "http_types.hpp"
+#include "../api/http_types.hpp"
 #include "lwip/sockets.h"
 
 #define HTTP_RECV_BUF_SZ 1024

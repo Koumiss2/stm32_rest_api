@@ -68,3 +68,25 @@ curl -X POST -d '{"key": "value"}' http://<device-ip>/status
 - LwIP (Sockets API)
 - FreeRTOS
 - C++17 (или выше)
+
+## Integration
+
+In the main project:
+
+```cpp
+extern "C" void http_server_task(void *argument);
+```
+
+```cpp
+void MX_FREERTOS_Init(void) {
+  const osThreadAttr_t httpTaskAttr = {
+    .name = "http_server",
+    .stack_size = 1024 * 4,
+    .priority = (osPriority_t) osPriorityNormal,
+  };
+
+  osThreadNew(http_server_task, nullptr, &httpTaskAttr);
+}
+```
+
+The module now registers the mock `/status` route automatically.

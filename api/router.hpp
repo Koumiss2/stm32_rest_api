@@ -1,7 +1,7 @@
 #pragma once
 
 #include "http_types.hpp"
-#include "IController.hpp"
+#include "../endpoints/IController.hpp"
 #include <cstdint>
 #include <vector>
 #include <string_view>

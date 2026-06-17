@@ -1,11 +1,36 @@
 #include "http_server.hpp"
-#include "router.hpp"
-#include "StatusController.hpp"
+#include "../api/rest_api.hpp"
+#include "../api/router.hpp"
+#include "cmsis_os2.h"
+#include "lwip/netif.h"
+#include "lwip/ip4_addr.h"
 #include <cstring>
 #include <cstdio>
 #include <string>
 
-static StatusController status_controller;
+extern "C" {
+extern struct netif gnetif;
+}
+
+namespace {
+bool wait_for_network_ready(uint32_t timeout_ms) {
+    constexpr uint32_t step_ms = 250;
+    uint32_t waited_ms = 0;
+
+    while (waited_ms < timeout_ms) {
+        if (netif_is_up(&gnetif) &&
+            netif_is_link_up(&gnetif) &&
+            !ip4_addr_isany_val(*netif_ip4_addr(&gnetif))) {
+            return true;
+        }
+
+        osDelay(step_ms);
+        waited_ms += step_ms;
+    }
+
+    return false;
+}
+}
 
 HttpServer::HttpServer(uint16_t port) : _port(port), _listen_fd(-1) {}
 
@@ -19,7 +44,9 @@ bool HttpServer::init() {
     struct sockaddr_in serv_addr;
 
     _listen_fd = lwip_socket(AF_INET, SOCK_STREAM, 0);
-    if (_listen_fd < 0) return false;
+    if (_listen_fd < 0) {
+        return false;
+    }
 
     int enable = 1;
     lwip_setsockopt(_listen_fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
@@ -68,7 +95,6 @@ void HttpServer::handle_client(int client_fd) {
         Request req = parse_request(buffer, n);
         Response res;
 
-        // Используем глобальный роутер для обработки запроса
         Router::instance().dispatch(req, res);
 
         send_response(client_fd, res);
@@ -81,7 +107,6 @@ Request HttpServer::parse_request(char* buffer, size_t size) {
     
     std::string_view full_data(buffer, size);
     
-    // Находим начало тела (после \r\n\r\n)
     size_t header_end = full_data.find("\r\n\r\n");
     if (header_end != std::string_view::npos) {
         req.body = full_data.substr(header_end + 4);
@@ -120,13 +145,26 @@ void HttpServer::send_response(int client_fd, const Response& res) {
     lwip_send(client_fd, res.body.data(), res.body.size(), 0);
 }
 
-// Реализация задачи FreeRTOS
 void http_server_task(void *argument) {
     (void)argument;
-    
-    // Регистрируем контроллеры с указанием пути
-    Router::instance().register_controller("/status", &status_controller);
+
+    if (!wait_for_network_ready(10000)) {
+        osThreadExit();
+    }
+
+    rest_api_register_default_routes();
     
     HttpServer server(80);
     server.run();
+
+    osThreadExit();
+}
+
+bool rest_api_start_server_task(void) {
+    osThreadAttr_t http_task_attr{};
+    http_task_attr.name = "http_server";
+    http_task_attr.stack_size = 1024 * 4;
+    http_task_attr.priority = (osPriority_t) osPriorityNormal;
+
+    return osThreadNew(http_server_task, nullptr, &http_task_attr) != nullptr;
 }
