@@ -1,7 +1,6 @@
 #include "StatusController.hpp"
-#define JSMN_STATIC
+#define JSMN_HEADER
 #include "../jsmn/jsmn.h"
-#include <cstring>
 
 void StatusController::get(const Request& req, Response& res) {
     (void)req;
@@ -16,16 +15,12 @@ void StatusController::post(const Request& req, Response& res) {
         return;
     }
 
-    jsmn_parser p;
-    jsmntok_t tokens[16]; 
-    jsmn_init(&p);
-    
-    // Парсим
-    int r = jsmn_parse(&p, req.body.data(), req.body.size(), tokens, 16);
-    
-    // Если r < 0 — ошибка парсинга
-    // Если tokens[0].type != JSMN_OBJECT — мы ожидаем JSON объект {}
-    if (r < 0 || tokens[0].type != JSMN_OBJECT) {
+    jsmn_parser parser;
+    jsmntok_t tokens[8];
+    jsmn_init(&parser);
+
+    int parsed = jsmn_parse(&parser, req.body.data(), req.body.size(), tokens, 8);
+    if (parsed < 0 || tokens[0].type != JSMN_OBJECT) {
         res.status = HttpStatus::BAD_REQUEST;
         res.body = "{\"error\":\"invalid json structure\"}";
         return;

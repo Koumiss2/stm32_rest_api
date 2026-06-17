@@ -1,12 +1,12 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
-#include <string>
 #include "../api/http_types.hpp"
 #include "lwip/sockets.h"
 
-#define HTTP_RECV_BUF_SZ 1024
+#ifndef HTTP_RECV_BUF_SZ
+#define HTTP_RECV_BUF_SZ 384
+#endif
 
 class HttpServer {
 public:

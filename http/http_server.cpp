@@ -5,8 +5,6 @@
 #include "lwip/netif.h"
 #include "lwip/ip4_addr.h"
 #include <cstring>
-#include <cstdio>
-#include <string>
 
 extern "C" {
 extern struct netif gnetif;
@@ -29,6 +27,26 @@ bool wait_for_network_ready(uint32_t timeout_ms) {
     }
 
     return false;
+}
+
+void append_str(char* dst, size_t& pos, size_t cap, const char* src) {
+    while (*src != '\0' && pos < cap) {
+        dst[pos++] = *src++;
+    }
+}
+
+void append_uint(char* dst, size_t& pos, size_t cap, uint32_t value) {
+    char tmp[10];
+    size_t len = 0;
+
+    do {
+        tmp[len++] = static_cast<char>('0' + (value % 10));
+        value /= 10;
+    } while (value > 0 && len < sizeof(tmp));
+
+    while (len > 0 && pos < cap) {
+        dst[pos++] = tmp[--len];
+    }
 }
 }
 
@@ -112,36 +130,41 @@ Request HttpServer::parse_request(char* buffer, size_t size) {
         req.body = full_data.substr(header_end + 4);
     }
 
-    char* method_str = strtok(buffer, " ");
-    if (method_str) {
-        if (strcmp(method_str, "GET") == 0) req.method = HttpMethod::GET;
-        else if (strcmp(method_str, "POST") == 0) req.method = HttpMethod::POST;
-        else if (strcmp(method_str, "PUT") == 0) req.method = HttpMethod::PUT;
-        else if (strcmp(method_str, "DELETE") == 0) req.method = HttpMethod::DELETE;
+    size_t method_end = full_data.find(' ');
+    if (method_end == std::string_view::npos) {
+        return req;
     }
 
-    char* uri_str = strtok(nullptr, " ");
-    if (uri_str) {
-        req.uri = uri_str;
+    std::string_view method = full_data.substr(0, method_end);
+    if (method == "GET") req.method = HttpMethod::GET;
+    else if (method == "POST") req.method = HttpMethod::POST;
+    else if (method == "PUT") req.method = HttpMethod::PUT;
+    else if (method == "DELETE") req.method = HttpMethod::DELETE;
+
+    size_t uri_start = method_end + 1;
+    size_t uri_end = full_data.find(' ', uri_start);
+    if (uri_end != std::string_view::npos) {
+        req.uri = full_data.substr(uri_start, uri_end - uri_start);
     }
 
     return req;
 }
 
 void HttpServer::send_response(int client_fd, const Response& res) {
-    char hdr[256];
+    char hdr[128];
+    size_t pos = 0;
     int code = static_cast<int>(res.status);
     const char* status_text = (res.status == HttpStatus::OK) ? "OK" : "Not Found";
 
-    int n = snprintf(hdr, sizeof(hdr),
-        "HTTP/1.1 %d %s\r\n"
-        "Content-Type: application/json\r\n"
-        "Content-Length: %d\r\n"
-        "Connection: close\r\n"
-        "\r\n",
-        code, status_text, (int)res.body.size());
+    append_str(hdr, pos, sizeof(hdr), "HTTP/1.1 ");
+    append_uint(hdr, pos, sizeof(hdr), static_cast<uint32_t>(code));
+    append_str(hdr, pos, sizeof(hdr), " ");
+    append_str(hdr, pos, sizeof(hdr), status_text);
+    append_str(hdr, pos, sizeof(hdr), "\r\nContent-Type: application/json\r\nContent-Length: ");
+    append_uint(hdr, pos, sizeof(hdr), static_cast<uint32_t>(res.body.size()));
+    append_str(hdr, pos, sizeof(hdr), "\r\nConnection: close\r\n\r\n");
 
-    lwip_send(client_fd, hdr, n, 0);
+    lwip_send(client_fd, hdr, pos, 0);
     lwip_send(client_fd, res.body.data(), res.body.size(), 0);
 }
 
@@ -163,7 +186,7 @@ void http_server_task(void *argument) {
 bool rest_api_start_server_task(void) {
     osThreadAttr_t http_task_attr{};
     http_task_attr.name = "http_server";
-    http_task_attr.stack_size = 1024 * 4;
+    http_task_attr.stack_size = 1024 * 2;
     http_task_attr.priority = (osPriority_t) osPriorityNormal;
 
     return osThreadNew(http_server_task, nullptr, &http_task_attr) != nullptr;
