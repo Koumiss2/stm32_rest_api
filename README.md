@@ -1,92 +1,77 @@
-# STM32 REST API Framework
+# rest_api
 
-Легковесный REST API фреймворк для STM32, работающий поверх **LwIP** и **FreeRTOS**. 
-Предназначен для создания HTTP-эндпоинтов на встраиваемых системах с использованием современного C++ подхода.
+Легковесный HTTP/REST-модуль для STM32 на базе LwIP и FreeRTOS. Подходит для простых диагностических и сервисных endpoint'ов без динамической маршрутизации и тяжелого JSON-стека.
 
-## Архитектура
+## Структура
 
-Проект разделен на несколько логических уровней:
+- `http/`: TCP-сервер и запуск RTOS-задачи
+- `api/`: типы `Request`/`Response`, роутер и точки входа
+- `endpoints/`: контроллеры
+- `jsmn/`: компактный JSON-парсер для простых `POST`
 
-- **`http/`**: Низкоуровневая обертка над сокетами LwIP. Обрабатывает входящие TCP-соединения и парсит HTTP-заголовки.
-- **`api/`**: Ядро фреймворка. Содержит `Router` (маршрутизатор) и определения типов (`Request`, `Response`).
-- **`endpoints/`**: Бизнес-логика. Здесь располагаются контроллеры ресурсов.
-- **`jsmn/`**: Ультра-легкая библиотека для парсинга JSON.
+## Что есть
 
-## Как добавить новый эндпоинт
+- `rest_api_start_server_task()`: старт HTTP-задачи
+- `rest_api_register_default_routes()`: регистрация встроенных маршрутов
+- `Router::instance()`: singleton-роутер
+- `IController`: базовый интерфейс контроллера
+- встроенный `StatusController` для `/status`
 
-Фреймворк использует паттерн **Restful Controller**. Один класс отвечает за один путь (URI) и обрабатывает различные HTTP-методы.
+## Как использовать
 
-### 1. Создайте класс контроллера
-Унаследуйте свой класс от `IController` и переопределите нужные методы (`get`, `post`, `put`, `del`).
+```cpp
+#include "rest_api.hpp"
+
+void StartDefaultTask(void *argument) {
+    MX_LWIP_Init();
+    rest_api_start_server_task();
+
+    for (;;) {
+        osDelay(1000);
+    }
+}
+```
+
+После старта модуль ждет, пока сетевой интерфейс станет готов, и затем запускает HTTP-сервер на порту `80`.
+
+## Встроенные endpoint'ы
+
+- `GET /status`
+- `POST /status`
+
+## Как добавить свой контроллер
 
 ```cpp
 #include "IController.hpp"
+#include "router.hpp"
 
-class MyResourceController : public IController {
+class MyController : public IController {
 public:
     void get(const Request& req, Response& res) override {
+        (void)req;
         res.status = HttpStatus::OK;
-        res.body = "{\"message\":\"Hello from MyResource\"}";
+        res.body = "{\"message\":\"hello\"}";
     }
 };
-```
 
-### 2. Зарегистрируйте контроллер
-В файле запуска (обычно `http_server.cpp` или `main.cpp`) создайте экземпляр контроллера и добавьте его в роутер:
+static MyController g_my_controller;
 
-```cpp
-static MyResourceController my_controller;
-
-void http_server_task(void *argument) {
-    // ...
-    Router::instance().register_controller("/my-resource", &my_controller);
-    // ...
+void register_routes() {
+    Router::instance().register_controller("/my", &g_my_controller);
 }
 ```
 
-## Тестирование
+## Основные моменты
 
-Для тестирования эндпоинтов используйте `curl`.
+- Роутер статический и без heap: максимум маршрутов задается через `REST_API_MAX_ROUTES`, по умолчанию `4`.
+- `Response::body` имеет тип `std::string_view`, поэтому строка должна жить дольше, чем выполняется отправка ответа.
+- Буфер приема небольшой: `HTTP_RECV_BUF_SZ = 384`, значит большие HTTP-заголовки и тела пока не поддерживаются.
+- Сервер разбирает только метод, URI и тело после `\r\n\r\n`; полноценный HTTP parser не реализован.
+- Для неподдерживаемого метода в найденном контроллере базовый `IController` отвечает `405`.
+- Для неизвестного маршрута роутер возвращает `404` и `{"error":"route not found"}`.
 
-### GET запрос
-```bash
-curl http://<device-ip>/status
-```
+## На что обратить внимание
 
-### POST запрос с JSON
-```bash
-curl -X POST -d '{"key": "value"}' http://<device-ip>/status
-```
-
-## Особенности реализации
-
-- **Zero-copy (по возможности)**: Используется `std::string_view` для работы со строками без лишних аллокаций.
-- **Минимальный объем памяти**: Парсинг JSON через `jsmn` не использует кучу (heap).
-- **Расширяемость**: Роутер поддерживает как контроллеры, так и простые лямбда-функции.
-
-## Зависимости
-- LwIP (Sockets API)
-- FreeRTOS
-- C++17 (или выше)
-
-## Integration
-
-In the main project:
-
-```cpp
-extern "C" void http_server_task(void *argument);
-```
-
-```cpp
-void MX_FREERTOS_Init(void) {
-  const osThreadAttr_t httpTaskAttr = {
-    .name = "http_server",
-    .stack_size = 1024 * 4,
-    .priority = (osPriority_t) osPriorityNormal,
-  };
-
-  osThreadNew(http_server_task, nullptr, &httpTaskAttr);
-}
-```
-
-The module now registers the mock `/status` route automatically.
+- В `send_response()` текст статуса сейчас различается только между `200 OK` и всем остальным как `Not Found`, даже если фактический код `400`, `405` или `500`.
+- Контроллеры лучше держать статическими или глобальными: роутер хранит сырой указатель.
+- Модуль рассчитан на простые REST-сценарии, а не на высокую нагрузку или большие JSON-документы.
